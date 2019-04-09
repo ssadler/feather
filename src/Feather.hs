@@ -81,9 +81,11 @@ instance {-# OVERLAPPABLE #-} SIM s i m => EventInput s i m where
 -- Add listener
 --
 
-addHandler :: forall s i m o. (SIM s i m, EventInput s i m, T o, T m)
-           => EventHandler i o m -> m ()
-addHandler h = do
+addHandler :: forall s i m o a.
+              (SIM s i m, EventInput s i m, T o, T m, Handles i o m a)
+           => a -> m ()
+addHandler mh = do
+  h <- initHandler mh
 
   hid <- lensEvents . id' <<%= (+1)
   inputs <- getInputs h
@@ -187,7 +189,6 @@ listeners t = listeners' . at t . nonl
 emitters :: TypeRep -> Lens' (EventState) [(HandlerId, OpaqueUpdater)]
 emitters t = emitters' . at t . nonl
 
-
 type TestM = StateT EventState IO
 type TestHandler i o = EventHandler i o TestM
 
@@ -213,8 +214,8 @@ makeTestHandler :: a -> b -> Int -> TestHandler a b
 makeTestHandler a b i = f
   where f y a = replicateM_ i (y b)
 
-testEvents :: IO ()
-testEvents = do
+testEvents' :: IO ()
+testEvents' = do
   _ <- runStateT act emptyEventState
   pure ()
   where
@@ -227,3 +228,21 @@ testEvents = do
       runEvent A
       runEvent Done
 
+testEvents :: IO ()                                                 
+testEvents = do                                                     
+  flip runStateT emptyEventState $ do                         
+    addHandler showHandler                                    
+    addHandler printHandler                                   
+    dispatch <- getHandler                                    
+    put $ error "will not be reached, because dispatch\
+                \encapsulates the whole downstream DAG"                         
+    dispatch (1::Int)                                         
+
+  pure ()
+  where
+    showHandler :: EventHandler Int String TestM
+    showHandler yield = yield . show
+
+    printHandler :: EventHandler String () TestM
+    printHandler _ = liftIO . putStrLn
+                                                              
